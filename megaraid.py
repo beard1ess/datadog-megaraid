@@ -21,12 +21,12 @@ except ImportError:
         def __init__(self, *args):
             pass
 
-        def gauge(self, data, value, device=None, tags=None):
+        def gauge(self, data, value, device_name=None, tags=None):
             post = {}
-            if device is not None:
-                post['device'] = device
+            if device_name is not None:
+                post['device'] = device_name
             if tags is not None:
-                post['tags'] = device
+                post['tags'] = device_name
             post[data] = value
             print(json.dumps(post))
 
@@ -37,14 +37,14 @@ class MegaraidCheck(AgentCheck):
         # Defaults
         self.LICEXPIRE = 30
         self.MONCOUNT = 100
-        self.log = syslog.syslog
+        self.syslog = syslog.syslog
     pass
 
     def check(self, instance):
         megacli = '/usr/sbin/megacli'
 
         if not (os.path.isfile(megacli) and os.access(megacli, os.X_OK)):
-            self.log("Unable to use megacli at %s" % megacli)
+            self.syslog("Unable to use megacli at %s" % megacli)
         else:
             self.check_adapter(instance, megacli)
             self.check_disks(instance, megacli)
@@ -58,7 +58,7 @@ class MegaraidCheck(AgentCheck):
         
         adapters = dict()
         if exit_code != 0:
-            self.log("Got exit code %s for command '%s' and output %s" % (exit_code, cmd, output))
+            self.syslog("Got exit code %s for command '%s' and output %s" % (exit_code, cmd, output))
             return
 
         current_adapter=None
@@ -73,7 +73,7 @@ class MegaraidCheck(AgentCheck):
                 else:
                     adapters[current_adapter]['state'] = 1
 
-                self.gauge('megaraid.adapter.status', adapters[current_adapter]['state'])
+                self.gauge('megaraid.adapter.status', adapters[current_adapter]['state'], device_name="%s:megaraid/%s" % (self.hostname, current_adapter))
 
     def check_disks(self, instance, megacli):
         adapter = instance.get('adapter', 0)
@@ -85,7 +85,7 @@ class MegaraidCheck(AgentCheck):
         disks = dict()
 
         if exit_code != 0:
-            self.log("Got exit code %s for command '%s' and output %s" % (exit_code, cmd, output))
+            self.syslog("Got exit code %s for command '%s' and output %s" % (exit_code, cmd, output))
             return
 
         current_disk = None
@@ -112,7 +112,7 @@ class MegaraidCheck(AgentCheck):
 
             elif line.startswith('Drive Temperature'):
                 disks[adapter][current_disk]['temperature'] = int(line.split(':')[1].split('C')[0])
-                self.log("Got temp %s for disk 'megaraid/%s/%s'" % (disks[adapter][current_disk]['temperature'], adapter, current_disk))
+                self.syslog("Got temp %s for disk 'megaraid/%s/%s'" % (disks[adapter][current_disk]['temperature'], adapter, current_disk))
             elif line.startswith('Firmware state'):
                 if line.count('Online') < 1 or line.count('Spun Up'):
                     disks[adapter][current_disk]['firmware_ok'] = 0
@@ -122,7 +122,7 @@ class MegaraidCheck(AgentCheck):
         for adapt in disks:
             for disk in disks[adapt]: 
                 for key in disks[adapt][disk]: 
-                    self.gauge('megaraid.device.%s' % key, disks[adapt][disk][key], device="megaraid/%s/%s" % (adapt, disk))
+                    self.gauge('megaraid.device.%s' % key, disks[adapt][disk][key], device_name="%s:adapter:%s/%s" % (self.hostname, adapt, disk))
 
 
 if __name__ == '__main__':
